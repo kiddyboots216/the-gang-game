@@ -1,29 +1,97 @@
 import { useEffect, useState } from 'react';
 import io from 'socket.io-client';
+import * as deck from '@letele/playing-cards';
 let socket;
 
 const Card = ({ card }) => {
     if (!card) return null;
+    
+    // Convert our card format to the library's format
+    const getCardComponent = (card) => {
+        // Get first letter of suit (H, D, C, S)
+        const suit = card.suit[0].toUpperCase();
+        
+        // Convert rank to library format (a, 2-10, j, q, k)
+        const rank = card.rank === 'A' ? 'a' :
+                    card.rank === 'K' ? 'k' :
+                    card.rank === 'Q' ? 'q' :
+                    card.rank === 'J' ? 'j' :
+                    card.rank.toLowerCase();
+
+        // Combine suit and rank (e.g., "H2", "Sa", "Dk")
+        const componentName = suit + rank;
+        
+        console.log('Creating card component:', {
+            originalCard: card,
+            suit,
+            rank,
+            componentName,
+            exists: !!deck[componentName]
+        });
+        
+        return deck[componentName];
+    };
+
+    const CardComponent = getCardComponent(card);
+    if (!CardComponent) {
+        console.error('Invalid card:', card);
+        return null;
+    }
+
     return (
         <div className="card">
-            {card.rank} of {card.suit}
+            <CardComponent style={{ width: '100%', height: '100%' }} />
+        </div>
+    );
+};
+
+const ChipHistory = ({ history }) => {
+    if (!history || history.length === 0) return null;
+
+    const rounds = ['Initial', 'After Flop', 'After Turn', 'After River'];
+    
+    return (
+        <div className="chip-history">
+            <h3>Chip History</h3>
+            <div className="history-grid">
+                {history.map((round, index) => (
+                    <div key={index} className="history-round">
+                        <h4>{rounds[index]}</h4>
+                        {Object.values(round).map(player => (
+                            <div key={player.username}>
+                                {player.username}: Chip {player.chip}
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
 
 export default function Home() {
     const [username, setUsername] = useState('');
+    const [roomName, setRoomName] = useState('');
     const [gameState, setGameState] = useState({
         currentPlayer: null,
         players: {},
         isGameStarted: false,
         communityCards: [],
-        currentBettingRound: 0
+        currentBettingRound: 0,
+        chipHistory: [],
+        isRevealed: false,
+        gameResult: null
     });
+    const [revealOrder, setRevealOrder] = useState([]);
     const [connected, setConnected] = useState(false);
 
     useEffect(() => {
         socketInitializer();
+        return () => {
+            if (socket) {
+                socket.disconnect();
+            }
+        };
     }, []);
 
     const socketInitializer = async () => {
@@ -31,27 +99,87 @@ export default function Home() {
         socket = io();
 
         socket.on('connect', () => {
+            console.log('Connected to server');
             setConnected(true);
         });
 
         socket.on('updateLobby', (players) => {
-            setGameState(prev => ({...prev, players}));
+            console.log('Lobby updated:', players);
+            setGameState(prev => ({
+                ...prev,
+                players
+            }));
         });
 
         socket.on('gameStarted', (newGameState) => {
-            setGameState(newGameState);
-        });
-
-        socket.on('communityCardsDealt', ({ communityCards, currentBettingRound }) => {
+            console.log('Game started:', newGameState);
+            // Find current player's ID to preserve their hand
+            const currentPlayerId = Object.keys(newGameState.players).find(
+                id => newGameState.players[id].username === gameState.currentPlayer
+            );
+            
             setGameState(prev => ({
                 ...prev,
+                ...newGameState,
+                currentPlayer: prev.currentPlayer,
+                isGameStarted: true, // Explicitly set this
+                players: {
+                    ...newGameState.players,
+                    [currentPlayerId]: newGameState.players[currentPlayerId]
+                }
+            }));
+        });
+
+        socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
+            console.log('Community cards dealt:', {
                 communityCards,
-                currentBettingRound
+                currentBettingRound,
+                chipHistory,
+                currentState: gameState
+            });
+            setGameState(prev => ({
+                ...prev,
+                communityCards: [...communityCards],
+                currentBettingRound,
+                chipHistory
             }));
         });
 
         socket.on('gameStateUpdated', (newGameState) => {
-            setGameState(newGameState);
+            console.log('Game state updated:', {
+                newState: newGameState,
+                currentState: gameState
+            });
+            const currentPlayerId = Object.keys(gameState.players).find(
+                id => gameState.players[id].username === gameState.currentPlayer
+            );
+            
+            setGameState(prev => ({
+                ...prev,
+                ...newGameState,
+                currentPlayer: prev.currentPlayer,
+                isGameStarted: true, // Keep the game started
+                players: {
+                    ...newGameState.players,
+                    [currentPlayerId]: {
+                        ...newGameState.players[currentPlayerId],
+                        hand: prev.players[currentPlayerId]?.hand || []
+                    }
+                }
+            }));
+        });
+
+        socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
+            console.log('Hands revealed:', { players, gameResult, revealOrder });
+            setGameState(prev => ({
+                ...prev,
+                players: {
+                    ...players
+                },
+                isRevealed: true,
+                gameResult
+            }));
+            setRevealOrder(revealOrder);
         });
     };
 
@@ -60,8 +188,15 @@ export default function Home() {
             alert('Please enter a username');
             return;
         }
-        socket.emit('joinGame', username);
-        setGameState(prev => ({...prev, currentPlayer: username}));
+        if (!roomName.trim()) {
+            alert('Please enter a room name');
+            return;
+        }
+        socket.emit('joinRoom', { roomName, username });
+        setGameState(prev => ({
+            ...prev,
+            currentPlayer: username
+        }));
     };
 
     const dealCommunityCards = () => {
@@ -73,9 +208,15 @@ export default function Home() {
     };
 
     const getCurrentPlayer = () => {
-        return Object.values(gameState.players).find(
-            player => player.username === gameState.currentPlayer
+        const player = Object.values(gameState.players || {}).find(
+            player => player?.username === gameState.currentPlayer
         );
+        console.log('Current player state:', {
+            username: gameState.currentPlayer,
+            player,
+            allPlayers: gameState.players
+        });
+        return player;
     };
 
     const getBettingRoundName = () => {
@@ -88,27 +229,43 @@ export default function Home() {
         }
     };
 
-    return (
-        <div className="container">
-            <h1>The Gang Game</h1>
-            
-            {/* Login Section */}
-            {!gameState.currentPlayer && (
-                <div className="login-section">
-                    <input 
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Enter your username"
-                    />
-                    <button onClick={joinGame}>Join Game</button>
-                </div>
-            )}
+    const revealHands = () => {
+        socket.emit('revealHands');
+    };
 
-            {/* Lobby Section */}
-            {gameState.currentPlayer && !gameState.isGameStarted && (
+    // Render login if not connected or no current player
+    if (!connected || !gameState.currentPlayer) {
+        return (
+            <div className="container">
+                <h1>The Gang Game</h1>
+                <div className="login-section">
+                    <div className="input-group">
+                        <input 
+                            type="text"
+                            value={roomName}
+                            onChange={(e) => setRoomName(e.target.value)}
+                            placeholder="Enter room name"
+                        />
+                        <input 
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            placeholder="Enter your username"
+                        />
+                        <button onClick={joinGame}>Join Game</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Render lobby if game hasn't started
+    if (!gameState.isGameStarted) {
+        return (
+            <div className="container">
+                <h1>The Gang Game</h1>
                 <div className="lobby-section">
-                    <h2>Game Lobby</h2>
+                    <h2>Game Lobby - Room: {roomName}</h2>
                     <p>Players in lobby: {Object.keys(gameState.players).length}</p>
                     <div className="player-list">
                         {Object.values(gameState.players).map(player => (
@@ -126,58 +283,75 @@ export default function Home() {
                         </button>
                     )}
                 </div>
-            )}
+            </div>
+        );
+    }
 
-            {/* Game Section */}
-            {gameState.isGameStarted && (
-                <div className="game-section">
-                    <div className="betting-round">
-                        <h3>{getBettingRoundName()} Round</h3>
+    // Render game
+    return (
+        <div className="container">
+            <h1>The Gang Game</h1>
+            <div className="game-section">
+                <div className="betting-round">
+                    <h3>{getBettingRoundName()} Round</h3>
+                </div>
+
+                {/* Current Player's Hand */}
+                <div className="player-hand">
+                    <h3>Your Hand</h3>
+                    <div className="cards">
+                        {getCurrentPlayer()?.hand?.map((card, index) => (
+                            <Card key={index} card={card} />
+                        ))}
                     </div>
+                    <p>Your Chip: {getCurrentPlayer()?.chip}</p>
+                </div>
 
-                    {/* Current Player's Hand */}
-                    <div className="player-hand">
-                        <h3>Your Hand</h3>
-                        <div className="cards">
-                            {getCurrentPlayer()?.hand.map((card, index) => (
-                                <Card key={index} card={card} />
-                            ))}
-                        </div>
-                        <p>Your Chip: {getCurrentPlayer()?.chip}</p>
+                {/* Community Cards */}
+                <div className="community-cards">
+                    <h3>Community Cards</h3>
+                    <div className="cards">
+                        {gameState.communityCards?.map((card, index) => (
+                            <Card key={index} card={card} />
+                        ))}
                     </div>
+                </div>
 
-                    {/* Community Cards */}
-                    <div className="community-cards">
-                        <h3>Community Cards</h3>
-                        <div className="cards">
-                            {gameState.communityCards.map((card, index) => (
-                                <Card key={index} card={card} />
-                            ))}
-                        </div>
-                    </div>
+                {/* Chip History */}
+                <ChipHistory history={gameState.chipHistory} />
 
-                    {/* Other Players */}
-                    <div className="other-players">
-                        <h3>Other Players</h3>
-                        {Object.entries(gameState.players)
-                            .filter(([_, player]) => player.username !== gameState.currentPlayer)
-                            .map(([playerId, player]) => (
-                                <div key={playerId} className="player-item">
-                                    <span>{player.username} (Chip: {player.chip})</span>
+                {/* Other Players */}
+                <div className="other-players">
+                    <h3>Other Players</h3>
+                    {Object.entries(gameState.players || {})
+                        .filter(([_, player]) => player && player.username && player.username !== gameState.currentPlayer)
+                        .map(([playerId, player]) => (
+                            <div key={playerId} className="player-item">
+                                <span>{player.username} (Chip: {player.chip})</span>
+                                {gameState.isRevealed && player.hand && (
+                                    <div className="cards">
+                                        {player.hand.map((card, index) => (
+                                            <Card key={index} card={card} />
+                                        ))}
+                                    </div>
+                                )}
+                                {!gameState.isRevealed && (
                                     <button 
                                         onClick={() => transferChip(playerId)}
-                                        disabled={getCurrentPlayer()?.chip === null}
+                                        disabled={!getCurrentPlayer()?.chip}
                                     >
                                         Transfer Chip
                                     </button>
-                                </div>
-                            ))
-                        }
-                    </div>
+                                )}
+                            </div>
+                        ))
+                    }
+                </div>
 
-                    {/* Game Controls */}
-                    {getCurrentPlayer()?.isHost && (
-                        <div className="game-controls">
+                {/* Game Controls */}
+                {getCurrentPlayer()?.isHost && (
+                    <div className="game-controls">
+                        {gameState.currentBettingRound < 3 && (
                             <button 
                                 onClick={dealCommunityCards}
                                 disabled={gameState.currentBettingRound >= 3}
@@ -186,10 +360,35 @@ export default function Home() {
                                      gameState.currentBettingRound === 1 ? 'Turn' : 
                                      gameState.currentBettingRound === 2 ? 'River' : ''}
                             </button>
+                        )}
+                        {gameState.currentBettingRound === 3 && !gameState.isRevealed && (
+                            <button onClick={revealHands}>
+                                Reveal Hands
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Game Result */}
+                {gameState.isRevealed && (
+                    <div className="game-result">
+                        <h2>Game Over - You {gameState.gameResult}!</h2>
+                        <div className="reveal-order">
+                            <h3>Hand Reveal Order:</h3>
+                            {revealOrder?.map((player, index) => (
+                                <div key={player.id} className="reveal-player">
+                                    <p>{index + 1}. {player.username} (Chip {player.chip})</p>
+                                    <div className="cards">
+                                        {player.hand?.map((card, cardIndex) => (
+                                            <Card key={cardIndex} card={card} />
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    )}
-                </div>
-            )}
+                    </div>
+                )}
+            </div>
 
             <style jsx>{`
                 .container {
@@ -199,6 +398,11 @@ export default function Home() {
                 }
                 .login-section, .lobby-section, .game-section {
                     margin: 20px 0;
+                }
+                .input-group {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 20px;
                 }
                 .player-list, .other-players {
                     margin: 10px 0;
@@ -218,10 +422,15 @@ export default function Home() {
                     margin: 10px 0;
                 }
                 .card {
-                    padding: 10px;
+                    width: 100px;
+                    height: 140px; /* 5:7 ratio */
+                    padding: 5px;
                     border: 1px solid #ccc;
                     border-radius: 4px;
                     background: white;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
                 }
                 button {
                     padding: 8px 16px;
@@ -237,12 +446,48 @@ export default function Home() {
                 }
                 input {
                     padding: 8px;
-                    margin-right: 10px;
                     border: 1px solid #ccc;
                     border-radius: 4px;
+                    flex: 1;
                 }
                 .game-controls {
                     margin-top: 20px;
+                    display: flex;
+                    gap: 10px;
+                    justify-content: center;
+                }
+                .chip-history {
+                    margin: 20px 0;
+                    padding: 15px;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                }
+                .history-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                }
+                .history-round {
+                    padding: 10px;
+                    background: white;
+                    border-radius: 4px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+                .game-result {
+                    margin-top: 30px;
+                    padding: 20px;
+                    background: #f0f8ff;
+                    border-radius: 8px;
+                    text-align: center;
+                }
+                .reveal-order {
+                    margin-top: 20px;
+                }
+                .reveal-player {
+                    margin: 10px 0;
+                    padding: 10px;
+                    background: white;
+                    border-radius: 4px;
                 }
             `}</style>
         </div>
