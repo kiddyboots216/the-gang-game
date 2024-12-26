@@ -99,16 +99,23 @@ export default function Home() {
             await fetch('/api/socket');
             
             // Configure socket with proper options
-            socket = io({
+            const socketOptions = {
                 path: '/api/socketio',
                 addTrailingSlash: false,
                 reconnection: true,
                 reconnectionAttempts: 5,
                 reconnectionDelay: 1000,
-                // Add these options for better serverless support
                 timeout: 60000,
                 transports: ['websocket', 'polling']
-            });
+            };
+
+            // In production, use the absolute URL
+            const socketUrl = process.env.NODE_ENV === 'production' 
+                ? window.location.origin  // This will be the Vercel deployment URL
+                : undefined;             // In development, use the default
+
+            console.log('Initializing socket with:', { socketUrl, socketOptions });
+            socket = io(socketUrl, socketOptions);
 
             socket.on('connect', () => {
                 console.log('Socket connected with ID:', socket.id);
@@ -116,9 +123,10 @@ export default function Home() {
             });
 
             socket.on('connect_error', (err) => {
-                console.error('Socket connection error:', err);
+                console.error('Socket connection error:', err, socket);
                 // Try to reconnect on error
                 setTimeout(() => {
+                    console.log('Attempting to reconnect...');
                     socket.connect();
                 }, 1000);
             });

@@ -103,15 +103,27 @@ const SocketHandler = async (req, res) => {
         path: '/api/socketio',
         addTrailingSlash: false,
         cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
+            origin: process.env.NODE_ENV === 'production' 
+                ? ['https://*.vercel.app'] // Allow all Vercel deployments
+                : ['http://localhost:3000'],
+            methods: ['GET', 'POST'],
+            credentials: true
         },
         transports: ['websocket', 'polling'],
-        // Add these options for better serverless support
         pingTimeout: 60000,
         pingInterval: 25000,
         upgradeTimeout: 30000,
-        maxHttpBufferSize: 1e8
+        maxHttpBufferSize: 1e8,
+        allowEIO3: true // Allow Engine.IO v3 client
+    });
+
+    // Handle WebSocket upgrade explicitly
+    const httpServer = res.socket.server;
+    httpServer.on('upgrade', (req, socket, head) => {
+        console.log('WebSocket upgrade requested');
+        if (req.url?.startsWith('/api/socketio')) {
+            io.engine.handleUpgrade(req, socket, head);
+        }
     });
     
     // Store io instance on the server
