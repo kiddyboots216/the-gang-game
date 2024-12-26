@@ -95,92 +95,110 @@ export default function Home() {
     }, []);
 
     const socketInitializer = async () => {
-        await fetch('/api/socket');
-        socket = io();
-
-        socket.on('connect', () => {
-            console.log('Connected to server');
-            setConnected(true);
-        });
-
-        socket.on('updateLobby', (players) => {
-            console.log('Lobby updated:', players);
-            setGameState(prev => ({
-                ...prev,
-                players
-            }));
-        });
-
-        socket.on('gameStarted', (newGameState) => {
-            console.log('Game started:', newGameState);
-            // Find current player's ID to preserve their hand
-            const currentPlayerId = Object.keys(newGameState.players).find(
-                id => newGameState.players[id].username === gameState.currentPlayer
-            );
+        try {
+            await fetch('/api/socket');
             
-            setGameState(prev => ({
-                ...prev,
-                ...newGameState,
-                currentPlayer: prev.currentPlayer,
-                isGameStarted: true, // Explicitly set this
-                players: {
-                    ...newGameState.players,
-                    [currentPlayerId]: newGameState.players[currentPlayerId]
-                }
-            }));
-        });
-
-        socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
-            console.log('Community cards dealt:', {
-                communityCards,
-                currentBettingRound,
-                chipHistory,
-                currentState: gameState
+            // Configure socket with proper options
+            socket = io({
+                path: '/api/socketio',
+                addTrailingSlash: false
             });
-            setGameState(prev => ({
-                ...prev,
-                communityCards: [...communityCards],
-                currentBettingRound,
-                chipHistory
-            }));
-        });
 
-        socket.on('gameStateUpdated', (newGameState) => {
-            console.log('Game state updated:', {
-                newState: newGameState,
-                currentState: gameState
+            socket.on('connect', () => {
+                console.log('Socket connected');
+                setConnected(true);
             });
-            const currentPlayerId = Object.keys(gameState.players).find(
-                id => gameState.players[id].username === gameState.currentPlayer
-            );
-            
-            setGameState(prev => ({
-                ...prev,
-                ...newGameState,
-                currentPlayer: prev.currentPlayer,
-                isGameStarted: true, // Keep the game started
-                players: {
-                    ...newGameState.players,
-                    [currentPlayerId]: {
-                        ...newGameState.players[currentPlayerId],
-                        hand: prev.players[currentPlayerId]?.hand || []
+
+            socket.on('connect_error', (err) => {
+                console.error('Socket connection error:', err);
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Socket disconnected');
+                setConnected(false);
+            });
+
+            socket.on('updateLobby', (players) => {
+                console.log('Lobby updated:', players);
+                setGameState(prev => ({
+                    ...prev,
+                    players
+                }));
+            });
+
+            socket.on('gameStarted', (newGameState) => {
+                console.log('Game started:', newGameState);
+                // Find current player's ID to preserve their hand
+                const currentPlayerId = Object.keys(newGameState.players).find(
+                    id => newGameState.players[id].username === gameState.currentPlayer
+                );
+                
+                setGameState(prev => ({
+                    ...prev,
+                    ...newGameState,
+                    currentPlayer: prev.currentPlayer,
+                    isGameStarted: true, // Explicitly set this
+                    players: {
+                        ...newGameState.players,
+                        [currentPlayerId]: newGameState.players[currentPlayerId]
                     }
-                }
-            }));
-        });
+                }));
+            });
 
-        socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
-            console.log('Hands revealed:', { players, gameResult, revealOrder });
-            setGameState(prev => ({
-                ...prev,
-                players: {
-                    ...players
-                },
-                isRevealed: true,
-                gameResult
-            }));
-            setRevealOrder(revealOrder);
-        });
+            socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
+                console.log('Community cards dealt:', {
+                    communityCards,
+                    currentBettingRound,
+                    chipHistory,
+                    currentState: gameState
+                });
+                setGameState(prev => ({
+                    ...prev,
+                    communityCards: [...communityCards],
+                    currentBettingRound,
+                    chipHistory
+                }));
+            });
+
+            socket.on('gameStateUpdated', (newGameState) => {
+                console.log('Game state updated:', {
+                    newState: newGameState,
+                    currentState: gameState
+                });
+                const currentPlayerId = Object.keys(gameState.players).find(
+                    id => gameState.players[id].username === gameState.currentPlayer
+                );
+                
+                setGameState(prev => ({
+                    ...prev,
+                    ...newGameState,
+                    currentPlayer: prev.currentPlayer,
+                    isGameStarted: true, // Keep the game started
+                    players: {
+                        ...newGameState.players,
+                        [currentPlayerId]: {
+                            ...newGameState.players[currentPlayerId],
+                            hand: prev.players[currentPlayerId]?.hand || []
+                        }
+                    }
+                }));
+            });
+
+            socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
+                console.log('Hands revealed:', { players, gameResult, revealOrder });
+                setGameState(prev => ({
+                    ...prev,
+                    players: {
+                        ...players
+                    },
+                    isRevealed: true,
+                    gameResult
+                }));
+                setRevealOrder(revealOrder);
+            });
+        } catch (error) {
+            console.error('Socket initialization error:', error);
+        }
     };
 
     const joinGame = () => {

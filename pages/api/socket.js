@@ -83,20 +83,25 @@ const createGameState = () => ({
     gameResult: null
 });
 
-const SocketHandler = (req, res) => {
+const SocketHandler = async (req, res) => {
     if (res.socket.server.io) {
         console.log('Socket is already running');
         res.end();
         return;
     }
 
-    const io = new Server(res.socket.server);
-    res.socket.server.io = io;
-
-    // Store game states for each room
-    const gameStates = new Map();
-
-    io.on('connection', (socket) => {
+    const io = new Server(res.socket.server, {
+        path: '/api/socketio',
+        addTrailingSlash: false,
+        cors: {
+            origin: '*',
+            methods: ['GET', 'POST']
+        },
+        transports: ['websocket', 'polling']
+    });
+    
+    // Define socket handlers
+    io.on('connection', socket => {
         console.log('New client connected');
         let currentRoom = null;
 
@@ -340,7 +345,16 @@ const SocketHandler = (req, res) => {
         });
     });
 
+    res.socket.server.io = io;
+
+    console.log('Setting up socket');
     res.end();
+};
+
+export const config = {
+    api: {
+        bodyParser: false,
+    },
 };
 
 export default SocketHandler;
