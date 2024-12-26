@@ -100,22 +100,13 @@ export default function Home() {
             
             if (!socket) {
                 socket = io({
-                    path: '/api/socketio',
-                    reconnectionAttempts: 5,
-                    reconnectionDelay: 1000,
-                    reconnectionDelayMax: 5000,
-                    timeout: 20000,
-                    transports: ['websocket', 'polling'],
-                    upgrade: true,
-                    forceNew: true
+                    path: '/api/socketio'
                 });
 
                 socket.on('connect', () => {
                     console.log('Socket connected with ID:', socket.id);
                     setConnected(true);
-                    // Rejoin room if we have the info
                     if (roomName && username) {
-                        console.log('Rejoining room:', roomName, 'as', username);
                         socket.emit('joinRoom', { roomName, username });
                     }
                 });
