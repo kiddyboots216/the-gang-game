@@ -95,92 +95,75 @@ export default function Home() {
     }, []);
 
     const socketInitializer = async () => {
-        try {
-            await fetch('/api/socketio');
-            
-            if (!socket) {
-                socket = io({
-                    path: '/api/socketio'
-                });
+        await fetch('/api/socketio');
+        socket = io();
 
-                socket.on('connect', () => {
-                    console.log('Socket connected with ID:', socket.id);
-                    setConnected(true);
-                    if (roomName && username) {
-                        socket.emit('joinRoom', { roomName, username });
-                    }
-                });
+        socket.on('connect', () => {
+            console.log('Connected to socket');
+            setConnected(true);
+        });
 
-                socket.on('connect_error', (err) => {
-                    console.error('Socket connection error:', err);
-                    setConnected(false);
-                });
+        socket.on('disconnect', () => {
+            console.log('Disconnected from socket');
+            setConnected(false);
+        });
 
-                socket.on('disconnect', (reason) => {
-                    console.log('Socket disconnected:', reason);
-                    setConnected(false);
-                });
+        socket.on('updateLobby', (players) => {
+            console.log('Lobby updated:', players);
+            setGameState(prev => ({
+                ...prev,
+                players,
+                // Maintain game started state if it was already started
+                isGameStarted: prev.isGameStarted
+            }));
+        });
 
-                socket.on('updateLobby', (players) => {
-                    console.log('Lobby updated:', players);
-                    setGameState(prev => ({
-                        ...prev,
-                        players,
-                        // Maintain game started state if it was already started
-                        isGameStarted: prev.isGameStarted
-                    }));
-                });
+        socket.on('gameStarted', (newGameState) => {
+            console.log('Game started:', newGameState);
+            setGameState(prev => ({
+                ...prev,
+                ...newGameState,
+                currentPlayer: prev.currentPlayer,
+                isGameStarted: true
+            }));
+        });
 
-                socket.on('gameStarted', (newGameState) => {
-                    console.log('Game started:', newGameState);
-                    setGameState(prev => ({
-                        ...prev,
-                        ...newGameState,
-                        currentPlayer: prev.currentPlayer,
-                        isGameStarted: true
-                    }));
-                });
+        socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
+            console.log('Community cards dealt:', {
+                communityCards,
+                currentBettingRound,
+                chipHistory
+            });
+            setGameState(prev => ({
+                ...prev,
+                communityCards: [...communityCards],
+                currentBettingRound,
+                chipHistory,
+                isGameStarted: true // Ensure game stays started
+            }));
+        });
 
-                socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
-                    console.log('Community cards dealt:', {
-                        communityCards,
-                        currentBettingRound,
-                        chipHistory
-                    });
-                    setGameState(prev => ({
-                        ...prev,
-                        communityCards: [...communityCards],
-                        currentBettingRound,
-                        chipHistory,
-                        isGameStarted: true // Ensure game stays started
-                    }));
-                });
+        socket.on('gameStateUpdated', (newGameState) => {
+            console.log('Game state updated:', newGameState);
+            setGameState(prev => ({
+                ...prev,
+                ...newGameState,
+                currentPlayer: prev.currentPlayer,
+                isGameStarted: true
+            }));
+        });
 
-                socket.on('gameStateUpdated', (newGameState) => {
-                    console.log('Game state updated:', newGameState);
-                    setGameState(prev => ({
-                        ...prev,
-                        ...newGameState,
-                        currentPlayer: prev.currentPlayer,
-                        isGameStarted: true
-                    }));
-                });
-
-                socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
-                    console.log('Hands revealed:', { players, gameResult, revealOrder });
-                    setGameState(prev => ({
-                        ...prev,
-                        players,
-                        isRevealed: true,
-                        gameResult,
-                        isGameStarted: true
-                    }));
-                    setRevealOrder(revealOrder);
-                });
-            }
-        } catch (error) {
-            console.error('Socket initialization error:', error);
-        }
+        socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
+            console.log('Hands revealed:', { players, gameResult, revealOrder });
+            setGameState(prev => ({
+                ...prev,
+                players,
+                isRevealed: true,
+                gameResult,
+                isGameStarted: true
+            }));
+            setRevealOrder(revealOrder);
+        });
     };
 
     const joinGame = () => {
