@@ -93,9 +93,14 @@ export default async function handler(req, res) {
         const io = new ServerIO(httpServer, {
             path: '/api/socketio',
             addTrailingSlash: false,
-            // Add ping timeout and interval
-            pingTimeout: 10000,
-            pingInterval: 5000,
+            pingTimeout: 60000,
+            pingInterval: 25000,
+            cors: {
+                origin: '*',
+                methods: ['GET', 'POST']
+            },
+            transports: ['websocket', 'polling'],
+            allowEIO3: true
         });
         
         // Store the io instance on the server

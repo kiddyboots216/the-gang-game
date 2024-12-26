@@ -99,6 +99,11 @@ export default function Home() {
             await fetch('/api/socketio');
             socket = io({
                 path: '/api/socketio',
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 20000,
+                transports: ['websocket', 'polling']
             });
 
             socket.on('connect', () => {
@@ -106,6 +111,7 @@ export default function Home() {
                 setConnected(true);
                 // Rejoin room if we have the info
                 if (roomName && username) {
+                    console.log('Rejoining room:', roomName, 'as', username);
                     socket.emit('joinRoom', { roomName, username });
                 }
             });
@@ -118,6 +124,15 @@ export default function Home() {
             socket.on('disconnect', (reason) => {
                 console.log('Socket disconnected:', reason);
                 setConnected(false);
+                // Don't attempt to reconnect if we're closing
+                if (reason === 'io client disconnect') {
+                    return;
+                }
+                // Attempt to reconnect
+                setTimeout(() => {
+                    console.log('Attempting to reconnect...');
+                    socket.connect();
+                }, 1000);
             });
 
             socket.on('updateLobby', (players) => {
