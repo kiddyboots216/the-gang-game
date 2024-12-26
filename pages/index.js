@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import io from 'socket.io-client';
+import Pusher from 'pusher-js';
 import * as deck from '@letele/playing-cards';
-let socket;
+
+const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+    cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+});
 
 const Card = ({ card }) => {
     if (!card) return null;
@@ -72,6 +75,8 @@ const ChipHistory = ({ history }) => {
 export default function Home() {
     const [username, setUsername] = useState('');
     const [roomName, setRoomName] = useState('');
+    const [channel, setChannel] = useState(null);
+    const [socketId, setSocketId] = useState(null);
     const [gameState, setGameState] = useState({
         currentPlayer: null,
         players: {},
@@ -86,100 +91,58 @@ export default function Home() {
     const [connected, setConnected] = useState(false);
 
     useEffect(() => {
-        socketInitializer();
+        pusher.connection.bind('connected', () => {
+            setSocketId(pusher.connection.socket_id);
+        });
+
         return () => {
-            if (socket) {
-                socket.disconnect();
+            if (channel) {
+                channel.unbind_all();
+                channel.unsubscribe();
             }
+            pusher.disconnect();
         };
     }, []);
 
-    const socketInitializer = async () => {
-        await fetch('/api/socketio');
-        socket = io();
+    const joinGame = async () => {
+        if (!username.trim() || !roomName.trim()) {
+            alert('Please enter both username and room name');
+            return;
+        }
 
-        socket.on('connect', () => {
-            console.log('Connected to socket');
-            setConnected(true);
-        });
+        const newChannel = pusher.subscribe(roomName);
+        setChannel(newChannel);
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from socket');
-            setConnected(false);
-        });
-
-        socket.on('updateLobby', (players) => {
-            console.log('Lobby updated:', players);
+        newChannel.bind('updateLobby', (players) => {
             setGameState(prev => ({
                 ...prev,
                 players,
-                // Maintain game started state if it was already started
                 isGameStarted: prev.isGameStarted
             }));
         });
 
-        socket.on('gameStarted', (newGameState) => {
-            console.log('Game started:', newGameState);
-            setGameState(prev => ({
-                ...prev,
-                ...newGameState,
-                currentPlayer: prev.currentPlayer,
-                isGameStarted: true
-            }));
+        // Add other event bindings...
+
+        const response = await fetch('/api/socketio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'join',
+                roomName,
+                username,
+                socketId: pusher.connection.socket_id
+            })
         });
 
-        socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
-            console.log('Community cards dealt:', {
-                communityCards,
-                currentBettingRound,
-                chipHistory
-            });
-            setGameState(prev => ({
-                ...prev,
-                communityCards: [...communityCards],
-                currentBettingRound,
-                chipHistory,
-                isGameStarted: true // Ensure game stays started
-            }));
-        });
-
-        socket.on('gameStateUpdated', (newGameState) => {
-            console.log('Game state updated:', newGameState);
-            setGameState(prev => ({
-                ...prev,
-                ...newGameState,
-                currentPlayer: prev.currentPlayer,
-                isGameStarted: true
-            }));
-        });
-
-        socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
-            console.log('Hands revealed:', { players, gameResult, revealOrder });
-            setGameState(prev => ({
-                ...prev,
-                players,
-                isRevealed: true,
-                gameResult,
-                isGameStarted: true
-            }));
-            setRevealOrder(revealOrder);
-        });
-    };
-
-    const joinGame = () => {
-        if (!username.trim()) {
-            alert('Please enter a username');
+        if (!response.ok) {
+            alert('Failed to join game');
             return;
         }
-        if (!roomName.trim()) {
-            alert('Please enter a room name');
-            return;
-        }
+
         setGameState(prev => ({
             ...prev,
             currentPlayer: username
         }));
-        socket.emit('joinRoom', { roomName, username });
     };
 
     const dealCommunityCards = () => {

@@ -1,4 +1,12 @@
-import { Server as ServerIO } from 'socket.io';
+import Pusher from 'pusher';
+
+const pusher = new Pusher({
+    appId: process.env.PUSHER_APP_ID,
+    key: process.env.PUSHER_KEY,
+    secret: process.env.PUSHER_SECRET,
+    cluster: process.env.PUSHER_CLUSTER,
+    useTLS: true
+});
 
 const gameStates = new Map();
 
@@ -14,46 +22,43 @@ const createGameState = () => ({
     gameResult: null
 });
 
-export default function handler(req, res) {
-    if (!res.socket.server.io) {
-        const io = new ServerIO(res.socket.server);
-        res.socket.server.io = io;
-
-        io.on('connection', socket => {
-            console.log('New client connected');
-            let currentRoom = null;
-
-            socket.on('joinRoom', ({ roomName, username }) => {
-                if (currentRoom) {
-                    socket.leave(currentRoom);
-                }
-                currentRoom = roomName;
-                socket.join(currentRoom);
-
-                let gameState = gameStates.get(currentRoom);
-                if (!gameState) {
-                    gameState = createGameState();
-                    gameStates.set(currentRoom, gameState);
-                }
-
-                if (Object.keys(gameState.players).length === 0) {
-                    gameState.hostId = socket.id;
-                }
-
-                gameState.players[socket.id] = {
-                    username,
-                    hand: [],
-                    chip: null,
-                    isHost: socket.id === gameState.hostId
-                };
-
-                io.to(currentRoom).emit('updateLobby', gameState.players);
-            });
-
-            // Rest of the event handlers stay the same...
-        });
+export default async function handler(req, res) {
+    if (req.method !== 'POST') {
+        res.status(405).json({ message: 'Method not allowed' });
+        return;
     }
-    res.end();
+
+    const { action, roomName, username, socketId } = req.body;
+
+    switch (action) {
+        case 'join': {
+            let gameState = gameStates.get(roomName);
+            if (!gameState) {
+                gameState = createGameState();
+                gameStates.set(roomName, gameState);
+            }
+
+            if (Object.keys(gameState.players).length === 0) {
+                gameState.hostId = socketId;
+            }
+
+            gameState.players[socketId] = {
+                username,
+                hand: [],
+                chip: null,
+                isHost: socketId === gameState.hostId
+            };
+
+            await pusher.trigger(roomName, 'updateLobby', gameState.players);
+            res.json(gameState.players);
+            break;
+        }
+
+        // Add other cases for game actions...
+
+        default:
+            res.status(400).json({ message: 'Invalid action' });
+    }
 }
 
 export const config = {
