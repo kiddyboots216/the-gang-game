@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Gang Game</title>
+    <style>
+        /* Styles for the game interface */
+        body { font-family: Arial, sans-serif; }
+        .player { margin-bottom: 20px; border: 1px solid #ccc; padding: 10px; }
+        .hand { font-weight: bold; }
+        .chip { display: inline-block; width: 20px; height: 20px; margin: 5px; border-radius: 50%; }
+        .red { background-color: red; }
+        .blue { background-color: blue; }
+        .green { background-color: green; }
+        .yellow { background-color: yellow; }
+        .community { margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<h1>The Gang Game</h1>
+
+<!-- Number of Players Input -->
+<input type="number" id="numPlayers" min="2" placeholder="Number of Players">
+<button onclick="startGame()">Start Game</button>
+
+<!-- Game Buttons -->
+<div id="gameButtons">
+    <button id="dealButton" onclick="dealCards()" disabled>Deal</button>
+    <button id="flopButton" onclick="dealFlop()" disabled>Deal Flop</button>
+    <button id="turnButton" onclick="dealTurn()" disabled>Deal Turn</button>
+    <button id="riverButton" onclick="dealRiver()" disabled>Deal River</button>
+    <button id="revealButton" onclick="revealHands()" disabled>Reveal Hands</button>
+</div>
+
+<!-- Players Area -->
+<div id="playersArea"></div>
+
+<!-- Community Cards Area -->
+<div id="communityCards" class="community"></div>
+
+<script>
+// Card ranks and suits
+const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
+
+// Create a deck of cards
+function createDeck() {
+    let deck = [];
+    for (let suit of suits) {
+        for (let rank of ranks) {
+            deck.push({ rank, suit });
+        }
+    }
+    return deck;
+}
+
+// Shuffle the deck
+function shuffleDeck(deck) {
+    for (let i = deck.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+}
+
+// Player object
+class Player {
+    constructor(number) {
+        this.number = number;
+        this.hand = [];
+        this.chip = number; // Initially assigned their number
+    }
+}
+
+// Game variables
+let players = [];
+let deck;
+let communityCards = [];
+let isGameStarted = false;
+
+// Start the game
+function startGame() {
+    let num = parseInt(document.getElementById('numPlayers').value);
+    if (isNaN(num) || num < 2) {
+        alert("Please enter a valid number of players (2 or more).");
+        return;
+    }
+    players = [];
+    for (let i = 1; i <= num; i++) {
+        players.push(new Player(i));
+    }
+    deck = createDeck();
+    shuffleDeck(deck);
+    dealInitialCards();
+    displayPlayers();
+    enableDealButton();
+    isGameStarted = true;
+}
+
+// Deal initial two cards to each player
+function dealInitialCards() {
+    for (let player of players) {
+        player.hand = [deck.pop(), deck.pop()];
+    }
+}
+
+// Display players on the page
+function displayPlayers() {
+    let playersArea = document.getElementById('playersArea');
+    playersArea.innerHTML = '';
+    for (let player of players) {
+        let div = document.createElement('div');
+        div.className = 'player';
+        div.innerHTML = `
+            Player ${player.number}<br>
+            Hand: ${player.hand[0].rank} of ${player.hand[0].suit}, ${player.hand[1].rank} of ${player.hand[1].suit}<br>
+            Chip: ${player.chip}
+        `;
+        playersArea.appendChild(div);
+    }
+}
+
+// Enable deal button
+function enableDealButton() {
+    document.getElementById('dealButton').disabled = false;
+}
+
+// Deal flop, turn, river
+function dealFlop() {
+    if (!isGameStarted) return;
+    for (let i = 0; i < 3; i++) {
+        communityCards.push(deck.pop());
+    }
+    displayCommunityCards();
+    enableTurnButton();
+}
+
+function dealTurn() {
+    if (!isGameStarted) return;
+    communityCards.push(deck.pop());
+    displayCommunityCards();
+    enableRiverButton();
+}
+
+function dealRiver() {
+    if (!isGameStarted) return;
+    communityCards.push(deck.pop());
+    displayCommunityCards();
+    enableRevealButton();
+}
+
+// Display community cards
+function displayCommunityCards() {
+    let community = document.getElementById('communityCards');
+    community.innerHTML = 'Community Cards: ' + communityCards.map(card => card.rank + ' of ' + card.suit).join(', ');
+}
+
+// Enable betting buttons based on game progression
+function enableFlopButton() {
+    document.getElementById('flopButton').disabled = false;
+}
+
+function enableTurnButton() {
+    document.getElementById('turnButton').disabled = false;
+}
+
+function enableRiverButton() {
+    document.getElementById('riverButton').disabled = false;
+}
+
+function enableRevealButton() {
+    document.getElementById('revealButton').disabled = false;
+}
+
+// Reveal hands in chip order
+function revealHands() {
+    if (!isGameStarted) return;
+    // Sort players by chip number
+    players.sort((a, b) => a.chip - b.chip);
+    // Evaluate and display hands in order
+    let handsArea = document.getElementById('playersArea');
+    handsArea.innerHTML = '';
+    for (let player of players) {
+        let hand = player.hand.concat(communityCards);
+        let evaluation = evaluateHand(hand);
+        handsArea.innerHTML += `Player ${player.number} - Hand: ${player.hand[0].rank + player.hand[0].suit}, ${player.hand[1].rank + player.hand[1].suit}<br>
+                                Evaluation: ${evaluation}<br>`;
+    }
+    // Validate hand order
+    validateHandOrder();
+}
+
+// Placeholder for hand evaluation logic
+function evaluateHand(hand) {
+    // Simple evaluation logic (to be replaced with full implementation)
+    return "High Card";
+}
+
+// Placeholder for hand order validation
+function validateHandOrder() {
+    alert("Hand validation not implemented.");
+}
+</script>
+
+</body>
+</html>
