@@ -1,5 +1,14 @@
 import { Server } from 'socket.io';
 
+// Store game states globally since Vercel functions are stateless
+let gameStates;
+if (global.gameStates) {
+    gameStates = global.gameStates;
+} else {
+    gameStates = new Map();
+    global.gameStates = gameStates;
+}
+
 // Card utilities
 const createDeck = () => {
     const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
@@ -97,12 +106,20 @@ const SocketHandler = async (req, res) => {
             origin: '*',
             methods: ['GET', 'POST']
         },
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        // Add these options for better serverless support
+        pingTimeout: 60000,
+        pingInterval: 25000,
+        upgradeTimeout: 30000,
+        maxHttpBufferSize: 1e8
     });
     
+    // Store io instance on the server
+    res.socket.server.io = io;
+
     // Define socket handlers
     io.on('connection', socket => {
-        console.log('New client connected');
+        console.log('New client connected, socket ID:', socket.id);
         let currentRoom = null;
 
         socket.on('joinRoom', ({ roomName, username }) => {
@@ -323,20 +340,27 @@ const SocketHandler = async (req, res) => {
             });
         });
 
-        socket.on('disconnect', () => {
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log(`Client disconnected. Reason: ${reason}, Socket ID: ${socket.id}`);
             if (currentRoom) {
                 const gameState = gameStates.get(currentRoom);
                 if (gameState) {
-                    console.log(`${gameState.players[socket.id]?.username} disconnected`);
+                    console.log(`${gameState.players[socket.id]?.username} disconnected from room ${currentRoom}`);
                     delete gameState.players[socket.id];
                     
                     if (Object.keys(gameState.players).length === 0) {
+                        console.log(`Deleting empty room: ${currentRoom}`);
                         gameStates.delete(currentRoom);
                     } else if (socket.id === gameState.hostId) {
                         // Assign new host if current host disconnected
                         const newHostId = Object.keys(gameState.players)[0];
                         gameState.hostId = newHostId;
                         gameState.players[newHostId].isHost = true;
+                        console.log(`New host assigned in room ${currentRoom}: ${gameState.players[newHostId].username}`);
                     }
                     
                     io.to(currentRoom).emit('updateLobby', gameState.players);
@@ -345,9 +369,7 @@ const SocketHandler = async (req, res) => {
         });
     });
 
-    res.socket.server.io = io;
-
-    console.log('Setting up socket');
+    console.log('Setting up socket server');
     res.end();
 };
 

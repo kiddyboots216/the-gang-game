@@ -101,21 +101,37 @@ export default function Home() {
             // Configure socket with proper options
             socket = io({
                 path: '/api/socketio',
-                addTrailingSlash: false
+                addTrailingSlash: false,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                // Add these options for better serverless support
+                timeout: 60000,
+                transports: ['websocket', 'polling']
             });
 
             socket.on('connect', () => {
-                console.log('Socket connected');
+                console.log('Socket connected with ID:', socket.id);
                 setConnected(true);
             });
 
             socket.on('connect_error', (err) => {
                 console.error('Socket connection error:', err);
+                // Try to reconnect on error
+                setTimeout(() => {
+                    socket.connect();
+                }, 1000);
             });
 
-            socket.on('disconnect', () => {
-                console.log('Socket disconnected');
+            socket.on('disconnect', (reason) => {
+                console.log('Socket disconnected:', reason);
                 setConnected(false);
+                // Try to reconnect unless explicitly closed
+                if (reason === 'io server disconnect') {
+                    setTimeout(() => {
+                        socket.connect();
+                    }, 1000);
+                }
             });
 
             socket.on('updateLobby', (players) => {
