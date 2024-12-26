@@ -104,6 +104,10 @@ export default function Home() {
             socket.on('connect', () => {
                 console.log('Socket connected with ID:', socket.id);
                 setConnected(true);
+                // Rejoin room if we have the info
+                if (roomName && username) {
+                    socket.emit('joinRoom', { roomName, username });
+                }
             });
 
             socket.on('connect_error', (err) => {
@@ -120,26 +124,19 @@ export default function Home() {
                 console.log('Lobby updated:', players);
                 setGameState(prev => ({
                     ...prev,
-                    players
+                    players,
+                    // Maintain game started state if it was already started
+                    isGameStarted: prev.isGameStarted
                 }));
             });
 
             socket.on('gameStarted', (newGameState) => {
                 console.log('Game started:', newGameState);
-                // Find current player's ID to preserve their hand
-                const currentPlayerId = Object.keys(newGameState.players).find(
-                    id => newGameState.players[id].username === gameState.currentPlayer
-                );
-                
                 setGameState(prev => ({
                     ...prev,
                     ...newGameState,
                     currentPlayer: prev.currentPlayer,
-                    isGameStarted: true, // Explicitly set this
-                    players: {
-                        ...newGameState.players,
-                        [currentPlayerId]: newGameState.players[currentPlayerId]
-                    }
+                    isGameStarted: true
                 }));
             });
 
@@ -147,38 +144,24 @@ export default function Home() {
                 console.log('Community cards dealt:', {
                     communityCards,
                     currentBettingRound,
-                    chipHistory,
-                    currentState: gameState
+                    chipHistory
                 });
                 setGameState(prev => ({
                     ...prev,
                     communityCards: [...communityCards],
                     currentBettingRound,
-                    chipHistory
+                    chipHistory,
+                    isGameStarted: true // Ensure game stays started
                 }));
             });
 
             socket.on('gameStateUpdated', (newGameState) => {
-                console.log('Game state updated:', {
-                    newState: newGameState,
-                    currentState: gameState
-                });
-                const currentPlayerId = Object.keys(gameState.players).find(
-                    id => gameState.players[id].username === gameState.currentPlayer
-                );
-                
+                console.log('Game state updated:', newGameState);
                 setGameState(prev => ({
                     ...prev,
                     ...newGameState,
                     currentPlayer: prev.currentPlayer,
-                    isGameStarted: true, // Keep the game started
-                    players: {
-                        ...newGameState.players,
-                        [currentPlayerId]: {
-                            ...newGameState.players[currentPlayerId],
-                            hand: prev.players[currentPlayerId]?.hand || []
-                        }
-                    }
+                    isGameStarted: true
                 }));
             });
 
@@ -186,11 +169,10 @@ export default function Home() {
                 console.log('Hands revealed:', { players, gameResult, revealOrder });
                 setGameState(prev => ({
                     ...prev,
-                    players: {
-                        ...players
-                    },
+                    players,
                     isRevealed: true,
-                    gameResult
+                    gameResult,
+                    isGameStarted: true
                 }));
                 setRevealOrder(revealOrder);
             });
@@ -208,11 +190,11 @@ export default function Home() {
             alert('Please enter a room name');
             return;
         }
-        socket.emit('joinRoom', { roomName, username });
         setGameState(prev => ({
             ...prev,
             currentPlayer: username
         }));
+        socket.emit('joinRoom', { roomName, username });
     };
 
     const dealCommunityCards = () => {

@@ -93,6 +93,9 @@ export default async function handler(req, res) {
         const io = new ServerIO(httpServer, {
             path: '/api/socketio',
             addTrailingSlash: false,
+            // Add ping timeout and interval
+            pingTimeout: 10000,
+            pingInterval: 5000,
         });
         
         // Store the io instance on the server
@@ -104,6 +107,7 @@ export default async function handler(req, res) {
 
             socket.on('joinRoom', ({ roomName, username }) => {
                 console.log(`${username} joining room: ${roomName}`);
+                
                 // Leave current room if in one
                 if (currentRoom) {
                     socket.leave(currentRoom);
@@ -126,18 +130,19 @@ export default async function handler(req, res) {
                 currentRoom = roomName;
                 socket.join(currentRoom);
 
-                // Create game state for room if it doesn't exist
-                if (!gameStates.has(currentRoom)) {
-                    gameStates.set(currentRoom, createGameState());
+                // Get or create game state for room
+                let gameState = gameStates.get(currentRoom);
+                if (!gameState) {
+                    gameState = createGameState();
+                    gameStates.set(currentRoom, gameState);
                 }
-
-                const gameState = gameStates.get(currentRoom);
 
                 // Set first player as host
                 if (Object.keys(gameState.players).length === 0) {
                     gameState.hostId = socket.id;
                 }
 
+                // Add player to game state
                 gameState.players[socket.id] = {
                     username,
                     hand: [],
@@ -145,7 +150,27 @@ export default async function handler(req, res) {
                     isHost: socket.id === gameState.hostId
                 };
 
+                // Send current game state to all players in room
                 io.to(currentRoom).emit('updateLobby', gameState.players);
+
+                // If game is already started, send game state to new player
+                if (gameState.isGameStarted) {
+                    const playerView = {
+                        isGameStarted: gameState.isGameStarted,
+                        currentBettingRound: gameState.currentBettingRound,
+                        communityCards: gameState.communityCards,
+                        chipHistory: gameState.chipHistory,
+                        isRevealed: gameState.isRevealed,
+                        gameResult: gameState.gameResult,
+                        players: Object.fromEntries(
+                            Object.entries(gameState.players).map(([id, player]) => [
+                                id,
+                                id === socket.id ? player : { ...player, hand: [] }
+                            ])
+                        )
+                    };
+                    socket.emit('gameStarted', playerView);
+                }
             });
 
             socket.on('startGame', () => {
