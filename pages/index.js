@@ -97,100 +97,96 @@ export default function Home() {
     const socketInitializer = async () => {
         try {
             await fetch('/api/socketio');
-            socket = io({
-                path: '/api/socketio',
-                reconnectionAttempts: 5,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                timeout: 20000,
-                transports: ['websocket', 'polling']
-            });
-
-            socket.on('connect', () => {
-                console.log('Socket connected with ID:', socket.id);
-                setConnected(true);
-                // Rejoin room if we have the info
-                if (roomName && username) {
-                    console.log('Rejoining room:', roomName, 'as', username);
-                    socket.emit('joinRoom', { roomName, username });
-                }
-            });
-
-            socket.on('connect_error', (err) => {
-                console.error('Socket connection error:', err);
-                setConnected(false);
-            });
-
-            socket.on('disconnect', (reason) => {
-                console.log('Socket disconnected:', reason);
-                setConnected(false);
-                // Don't attempt to reconnect if we're closing
-                if (reason === 'io client disconnect') {
-                    return;
-                }
-                // Attempt to reconnect
-                setTimeout(() => {
-                    console.log('Attempting to reconnect...');
-                    socket.connect();
-                }, 1000);
-            });
-
-            socket.on('updateLobby', (players) => {
-                console.log('Lobby updated:', players);
-                setGameState(prev => ({
-                    ...prev,
-                    players,
-                    // Maintain game started state if it was already started
-                    isGameStarted: prev.isGameStarted
-                }));
-            });
-
-            socket.on('gameStarted', (newGameState) => {
-                console.log('Game started:', newGameState);
-                setGameState(prev => ({
-                    ...prev,
-                    ...newGameState,
-                    currentPlayer: prev.currentPlayer,
-                    isGameStarted: true
-                }));
-            });
-
-            socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
-                console.log('Community cards dealt:', {
-                    communityCards,
-                    currentBettingRound,
-                    chipHistory
+            
+            if (!socket) {
+                socket = io({
+                    path: '/api/socketio',
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 5000,
+                    timeout: 20000,
+                    transports: ['websocket', 'polling'],
+                    upgrade: true,
+                    forceNew: true
                 });
-                setGameState(prev => ({
-                    ...prev,
-                    communityCards: [...communityCards],
-                    currentBettingRound,
-                    chipHistory,
-                    isGameStarted: true // Ensure game stays started
-                }));
-            });
 
-            socket.on('gameStateUpdated', (newGameState) => {
-                console.log('Game state updated:', newGameState);
-                setGameState(prev => ({
-                    ...prev,
-                    ...newGameState,
-                    currentPlayer: prev.currentPlayer,
-                    isGameStarted: true
-                }));
-            });
+                socket.on('connect', () => {
+                    console.log('Socket connected with ID:', socket.id);
+                    setConnected(true);
+                    // Rejoin room if we have the info
+                    if (roomName && username) {
+                        console.log('Rejoining room:', roomName, 'as', username);
+                        socket.emit('joinRoom', { roomName, username });
+                    }
+                });
 
-            socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
-                console.log('Hands revealed:', { players, gameResult, revealOrder });
-                setGameState(prev => ({
-                    ...prev,
-                    players,
-                    isRevealed: true,
-                    gameResult,
-                    isGameStarted: true
-                }));
-                setRevealOrder(revealOrder);
-            });
+                socket.on('connect_error', (err) => {
+                    console.error('Socket connection error:', err);
+                    setConnected(false);
+                });
+
+                socket.on('disconnect', (reason) => {
+                    console.log('Socket disconnected:', reason);
+                    setConnected(false);
+                });
+
+                socket.on('updateLobby', (players) => {
+                    console.log('Lobby updated:', players);
+                    setGameState(prev => ({
+                        ...prev,
+                        players,
+                        // Maintain game started state if it was already started
+                        isGameStarted: prev.isGameStarted
+                    }));
+                });
+
+                socket.on('gameStarted', (newGameState) => {
+                    console.log('Game started:', newGameState);
+                    setGameState(prev => ({
+                        ...prev,
+                        ...newGameState,
+                        currentPlayer: prev.currentPlayer,
+                        isGameStarted: true
+                    }));
+                });
+
+                socket.on('communityCardsDealt', ({ communityCards, currentBettingRound, chipHistory }) => {
+                    console.log('Community cards dealt:', {
+                        communityCards,
+                        currentBettingRound,
+                        chipHistory
+                    });
+                    setGameState(prev => ({
+                        ...prev,
+                        communityCards: [...communityCards],
+                        currentBettingRound,
+                        chipHistory,
+                        isGameStarted: true // Ensure game stays started
+                    }));
+                });
+
+                socket.on('gameStateUpdated', (newGameState) => {
+                    console.log('Game state updated:', newGameState);
+                    setGameState(prev => ({
+                        ...prev,
+                        ...newGameState,
+                        currentPlayer: prev.currentPlayer,
+                        isGameStarted: true
+                    }));
+                });
+
+                socket.on('handsRevealed', ({ players, gameResult, revealOrder }) => {
+                    console.log('Hands revealed:', { players, gameResult, revealOrder });
+                    setGameState(prev => ({
+                        ...prev,
+                        players,
+                        isRevealed: true,
+                        gameResult,
+                        isGameStarted: true
+                    }));
+                    setRevealOrder(revealOrder);
+                });
+            }
         } catch (error) {
             console.error('Socket initialization error:', error);
         }
