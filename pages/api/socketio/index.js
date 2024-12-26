@@ -1,4 +1,4 @@
-import { Server } from 'socket.io';
+import { Server as ServerIO } from 'socket.io';
 
 // Store game states globally since Vercel functions are stateless
 const gameStates = new Map();
@@ -86,62 +86,21 @@ const createGameState = () => ({
     gameResult: null
 });
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
     if (!res.socket.server.io) {
-        console.log('Initializing new Socket.io server...');
-        const io = new Server(res.socket.server, {
+        console.log('*First* Socket server initialization');
+        const httpServer = res.socket.server;
+        const io = new ServerIO(httpServer, {
             path: '/api/socketio',
             addTrailingSlash: false,
-            cors: {
-                origin: '*',
-                methods: ['GET', 'POST'],
-                credentials: true,
-            },
-            // Configure for serverless environment
-            transports: ['websocket', 'polling'],
-            connectionStateRecovery: {
-                // Increase the recovery time window
-                maxDisconnectionDuration: 2 * 60 * 1000,
-                skipMiddlewares: true,
-            },
-            // Adjust timeouts for serverless
-            pingTimeout: 60000,
-            pingInterval: 25000,
-            upgradeTimeout: 30000,
-            // Clean up disconnected clients
-            cleanupEmptyChildNamespaces: true
         });
-
-        // Store io instance on the server
+        
+        // Store the io instance on the server
         res.socket.server.io = io;
 
-        // Set up connection handler
         io.on('connection', (socket) => {
             console.log('New client connected:', socket.id);
             let currentRoom = null;
-
-            // Handle reconnection
-            socket.on('recover_state', ({ roomName, username }) => {
-                if (roomName && username) {
-                    console.log(`Recovering state for ${username} in room ${roomName}`);
-                    const gameState = gameStates.get(roomName);
-                    if (gameState) {
-                        socket.join(roomName);
-                        currentRoom = roomName;
-                        // Update the game state with the new socket ID
-                        const oldSocketId = Object.entries(gameState.players)
-                            .find(([_, player]) => player.username === username)?.[0];
-                        if (oldSocketId && oldSocketId !== socket.id) {
-                            gameState.players[socket.id] = gameState.players[oldSocketId];
-                            delete gameState.players[oldSocketId];
-                            if (gameState.hostId === oldSocketId) {
-                                gameState.hostId = socket.id;
-                            }
-                        }
-                        io.to(roomName).emit('updateLobby', gameState.players);
-                    }
-                }
-            });
 
             socket.on('joinRoom', ({ roomName, username }) => {
                 console.log(`${username} joining room: ${roomName}`);
@@ -385,10 +344,10 @@ export default function handler(req, res) {
                 }
             });
         });
-
-        console.log('Setting up socket server');
-        res.end();
+    } else {
+        console.log('Socket server already running');
     }
+    res.end();
 }
 
 export const config = {

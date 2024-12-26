@@ -97,32 +97,13 @@ export default function Home() {
     const socketInitializer = async () => {
         try {
             await fetch('/api/socketio');
-            
-            // In production, use the deployment URL, otherwise use localhost
-            const socketUrl = process.env.NODE_ENV === 'production'
-                ? window.location.origin
-                : 'http://localhost:3000';
-
-            console.log('Initializing socket with URL:', socketUrl);
-            socket = io(socketUrl, {
+            socket = io({
                 path: '/api/socketio',
-                transports: ['websocket', 'polling'],
-                reconnectionAttempts: 5,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                timeout: 20000,
-                autoConnect: true
             });
 
             socket.on('connect', () => {
                 console.log('Socket connected with ID:', socket.id);
                 setConnected(true);
-                
-                // If we have room and username info, try to recover state
-                if (roomName && username) {
-                    console.log('Attempting to recover state...');
-                    socket.emit('recover_state', { roomName, username });
-                }
             });
 
             socket.on('connect_error', (err) => {
@@ -133,14 +114,6 @@ export default function Home() {
             socket.on('disconnect', (reason) => {
                 console.log('Socket disconnected:', reason);
                 setConnected(false);
-                
-                // Attempt to reconnect unless explicitly closed
-                if (reason === 'io server disconnect' || reason === 'transport close') {
-                    console.log('Attempting to reconnect...');
-                    setTimeout(() => {
-                        socket.connect();
-                    }, 1000);
-                }
             });
 
             socket.on('updateLobby', (players) => {
