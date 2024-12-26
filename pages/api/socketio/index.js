@@ -1,13 +1,7 @@
 import { Server } from 'socket.io';
 
 // Store game states globally since Vercel functions are stateless
-let gameStates;
-if (global.gameStates) {
-    gameStates = global.gameStates;
-} else {
-    gameStates = new Map();
-    global.gameStates = gameStates;
-}
+let gameStates = new Map();
 
 // Card utilities
 const createDeck = () => {
@@ -87,12 +81,12 @@ const createGameState = () => ({
     communityCards: [],
     currentBettingRound: 0,
     hostId: null,
-    chipHistory: [], // Array of chip states after each betting round
+    chipHistory: [],
     isRevealed: false,
     gameResult: null
 });
 
-const SocketHandler = async (req, res) => {
+export default function handler(req, res) {
     if (res.socket.server.io) {
         console.log('Socket is already running');
         res.end();
@@ -101,37 +95,15 @@ const SocketHandler = async (req, res) => {
 
     const io = new Server(res.socket.server, {
         path: '/api/socketio',
-        addTrailingSlash: false,
         cors: {
-            origin: process.env.NODE_ENV === 'production' 
-                ? ['https://*.vercel.app'] // Allow all Vercel deployments
-                : ['http://localhost:3000'],
-            methods: ['GET', 'POST'],
-            credentials: true
+            origin: process.env.NODE_ENV === 'production' ? '*' : 'http://localhost:3000',
         },
-        transports: ['websocket', 'polling'],
-        pingTimeout: 60000,
-        pingInterval: 25000,
-        upgradeTimeout: 30000,
-        maxHttpBufferSize: 1e8,
-        allowEIO3: true // Allow Engine.IO v3 client
+        transports: ['websocket']
     });
-
-    // Handle WebSocket upgrade explicitly
-    const httpServer = res.socket.server;
-    httpServer.on('upgrade', (req, socket, head) => {
-        console.log('WebSocket upgrade requested');
-        if (req.url?.startsWith('/api/socketio')) {
-            io.engine.handleUpgrade(req, socket, head);
-        }
-    });
-    
-    // Store io instance on the server
     res.socket.server.io = io;
 
-    // Define socket handlers
-    io.on('connection', socket => {
-        console.log('New client connected, socket ID:', socket.id);
+    io.on('connection', (socket) => {
+        console.log('a client connected:', socket.id);
         let currentRoom = null;
 
         socket.on('joinRoom', ({ roomName, username }) => {
@@ -352,12 +324,8 @@ const SocketHandler = async (req, res) => {
             });
         });
 
-        socket.on('error', (error) => {
-            console.error('Socket error:', error);
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log(`Client disconnected. Reason: ${reason}, Socket ID: ${socket.id}`);
+        socket.on('disconnect', () => {
+            console.log('a client disconnected:', socket.id);
             if (currentRoom) {
                 const gameState = gameStates.get(currentRoom);
                 if (gameState) {
@@ -383,12 +351,10 @@ const SocketHandler = async (req, res) => {
 
     console.log('Setting up socket server');
     res.end();
-};
+}
 
 export const config = {
     api: {
         bodyParser: false,
     },
-};
-
-export default SocketHandler;
+}; 

@@ -96,26 +96,18 @@ export default function Home() {
 
     const socketInitializer = async () => {
         try {
-            await fetch('/api/socket');
+            await fetch('/api/socketio');
             
-            // Configure socket with proper options
-            const socketOptions = {
+            // In production, use the deployment URL, otherwise use localhost
+            const socketUrl = process.env.NODE_ENV === 'production'
+                ? window.location.origin
+                : 'http://localhost:3000';
+
+            console.log('Initializing socket with URL:', socketUrl);
+            socket = io(socketUrl, {
                 path: '/api/socketio',
-                addTrailingSlash: false,
-                reconnection: true,
-                reconnectionAttempts: 5,
-                reconnectionDelay: 1000,
-                timeout: 60000,
-                transports: ['websocket', 'polling']
-            };
-
-            // In production, use the absolute URL
-            const socketUrl = process.env.NODE_ENV === 'production' 
-                ? window.location.origin  // This will be the Vercel deployment URL
-                : undefined;             // In development, use the default
-
-            console.log('Initializing socket with:', { socketUrl, socketOptions });
-            socket = io(socketUrl, socketOptions);
+                transports: ['websocket']
+            });
 
             socket.on('connect', () => {
                 console.log('Socket connected with ID:', socket.id);
@@ -123,7 +115,7 @@ export default function Home() {
             });
 
             socket.on('connect_error', (err) => {
-                console.error('Socket connection error:', err, socket);
+                console.error('Socket connection error:', err);
                 // Try to reconnect on error
                 setTimeout(() => {
                     console.log('Attempting to reconnect...');
